@@ -224,3 +224,4 @@ def memory_history(workspace: Path, limit: int = 30) -> list[dict[str, Any]]:
             for e in entries
         ]
     except Exception:
+        return []
