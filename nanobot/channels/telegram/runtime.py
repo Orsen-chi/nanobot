@@ -936,7 +936,12 @@ class TelegramChannel(BaseChannel):
                 return
             if stream_id is not None and buf.stream_id is not None and buf.stream_id != stream_id:
                 return
-            self._stop_typing(chat_id)
+            # resuming=True means the turn keeps going (tool round, length
+            # recovery, mid-turn injection): keep the typing indicator alive
+            # until the actual final response. Only a final (resuming=False)
+            # stream end turns it off.
+            if not resuming:
+                self._stop_typing(chat_id)
             if reply_to_message_id := meta.get("message_id"):
                 with suppress(ValueError):
                     await self._remove_reaction(chat_id, int(reply_to_message_id))
@@ -1022,6 +1027,14 @@ class TelegramChannel(BaseChannel):
         elif buf.stream_id is None:
             buf.stream_id = stream_id
         buf.text += delta
+
+        # A fresh segment (e.g. after a tool round) arrives without an inbound
+        # message, so restart the typing indicator if it is not running. This
+        # also covers resuming=False stream ends that were followed by more
+        # work (empty-response retries, provider retry-waits).
+        task = self._typing_tasks.get(chat_id)
+        if task is None or task.done():
+            self._start_typing(chat_id)
 
         if not buf.text.strip():
             return
