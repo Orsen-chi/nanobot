@@ -20,5 +20,12 @@ Priority: user corrections and preferences > solutions > decisions > events > en
 
 Do not mark something [skip] merely because it might already exist in long-term memory; Dream handles cross-file deduplication later.
 
+## Anchor fidelity (anti-drift)
+Preserve concrete anchors from the source conversation. Do NOT blur them:
+- Dates/times: keep absolute dates (e.g. "2026-08-08") — never "recently", "today", "a few days ago"
+- Numbers: keep exact counts, prices, ratios (e.g. "1000 用户 / 40 付费")
+- Names: keep proper nouns verbatim (people, companies, products, domains, file paths)
+Blurring an anchor is permanent information loss: the raw messages are discarded after consolidation and can never be recovered.
+
 Output concise bullet points only. No preamble, no commentary.
 If nothing noteworthy happened, output: (nothing)
