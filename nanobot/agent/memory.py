@@ -753,6 +753,7 @@ class Consolidator:
         get_tool_definitions: Callable[[], list[dict[str, Any]]],
         consolidation_ratio: float = 0.5,
         unified_session: bool = False,
+        consolidation_runtime_resolver: Callable[[LLMRuntime], LLMRuntime] | None = None,
     ):
         self.store = store
         self.sessions = sessions
@@ -760,9 +761,28 @@ class Consolidator:
         self.unified_session = unified_session
         self._build_messages = build_messages
         self._get_tool_definitions = get_tool_definitions
+        self._consolidation_runtime_resolver = consolidation_runtime_resolver
         self._locks: weakref.WeakValueDictionary[str, asyncio.Lock] = (
             weakref.WeakValueDictionary()
         )
+
+    def _archive_runtime(self, fallback: LLMRuntime) -> LLMRuntime:
+        """Return the dedicated consolidation runtime when configured.
+
+        Falls back to the caller-provided (session) runtime when no dedicated
+        model is configured or resolution fails.
+        """
+        if self._consolidation_runtime_resolver is None:
+            return fallback
+        try:
+            resolved = self._consolidation_runtime_resolver(fallback)
+        except Exception:
+            logger.warning(
+                "Consolidation runtime resolution failed; falling back to session runtime",
+                exc_info=True,
+            )
+            return fallback
+        return resolved or fallback
 
     def get_lock(self, session_key: str) -> asyncio.Lock:
         """Return the shared consolidation lock for one session."""
@@ -938,6 +958,7 @@ class Consolidator:
         """
         if not messages:
             return None
+        runtime = self._archive_runtime(runtime)
         messages_to_summarize = public_history_messages(
             summary_messages if summary_messages is not None else messages
         )

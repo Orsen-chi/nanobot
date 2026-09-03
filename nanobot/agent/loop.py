@@ -278,6 +278,7 @@ class AgentLoop:
         timezone: str | None = None,
         session_ttl_minutes: int = 0,
         consolidation_ratio: float = 0.5,
+        consolidation_model: str | None = None,
         hooks: list[AgentHook] | None = None,
         hook_factories: list[AgentTurnHookFactory] | None = None,
         unified_session: bool = False,
@@ -438,7 +439,9 @@ class AgentLoop:
             get_tool_definitions=self.tools.get_definitions,
             consolidation_ratio=consolidation_ratio,
             unified_session=unified_session,
+            consolidation_runtime_resolver=self._resolve_consolidation_runtime,
         )
+        self._consolidation_model = consolidation_model
         self.auto_compact = AutoCompact(
             sessions=self.sessions,
             consolidator=self.consolidator,
@@ -500,6 +503,7 @@ class AgentLoop:
             disabled_skills=defaults.disabled_skills,
             session_ttl_minutes=defaults.session_ttl_minutes,
             consolidation_ratio=defaults.consolidation_ratio,
+            consolidation_model=defaults.consolidation_model,
             tools_config=config.tools,
             model_presets=preset_helpers.configured_model_presets(config),
             model_preset=defaults.model_preset,
@@ -517,6 +521,32 @@ class AgentLoop:
         """Invalidate runtime config and notify clients to refresh its catalog."""
         self.runtime_resolver.invalidate()
         self._publish_runtime_selection(self.runtime_resolver.runtime)
+
+    def _resolve_consolidation_runtime(
+        self,
+        fallback: LLMRuntime,
+    ) -> LLMRuntime:
+        """Resolve the dedicated consolidation model for archive summaries.
+
+        ``consolidation_model`` may be a configured preset name (e.g. "DF")
+        or a raw model id.  Falls back to the session runtime when unset or
+        unresolvable.
+        """
+        spec = self._consolidation_model
+        if not spec or not spec.strip():
+            return fallback
+        spec = spec.strip()
+        if spec in self.runtime_resolver.model_presets:
+            try:
+                return self.runtime_resolver.resolve_preset(spec)
+            except KeyError:
+                pass
+        return dataclasses.replace(
+            fallback,
+            model=spec,
+            model_preset=None,
+            snapshot_signature=("consolidation_override", spec),
+        )
 
     def runtime_for_session(
         self,

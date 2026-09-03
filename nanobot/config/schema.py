@@ -161,6 +161,11 @@ class AgentDefaults(Base):
         validation_alias=AliasChoices("consolidationRatio"),
         serialization_alias="consolidationRatio",
     )  # Consolidation target ratio (0.5 = 50% of budget retained after compression)
+    consolidation_model: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("consolidationModel", "consolidation_model"),
+        serialization_alias="consolidationModel",
+    )  # Dedicated model preset name or raw model id for context consolidation (None = follow the session model)
     dream: DreamConfig = Field(default_factory=DreamConfig)
 
     @field_validator("timezone")
