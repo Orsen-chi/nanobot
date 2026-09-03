@@ -10,6 +10,10 @@ import type {
   FilePreviewPayload,
   ImageGenerationSettingsUpdate,
   McpPresetsPayload,
+  MarketplaceProvider,
+  MemoryFilePayload,
+  MemoryGraphPayload,
+  MemoryHistoryPayload,
   NanobotFeaturesPayload,
   ModelConfigurationCreate,
   ModelConfigurationUpdate,
@@ -26,7 +30,12 @@ import type {
   SettingsUpdate,
   SidebarStatePayload,
   SkillDetail,
+  SkillActionPayload,
+  SkillInstallPayload,
   SkillsPayload,
+  SkillsSearchPayload,
+  SkillsTrendsPayload,
+  SkillsTrendingPayload,
   SlashCommand,
   SlashCommandLifecycle,
   TranscriptionSettingsUpdate,
@@ -55,6 +64,7 @@ function isSlashCommandLifecycle(value: unknown): value is SlashCommandLifecycle
 const CHANNEL_VALUES_HEADER = "X-Nanobot-Channel-Values";
 const API_SERVICE_VALUES_HEADER = "X-Nanobot-API-Service-Values";
 const OAUTH_CODE_HEADER = "X-Nanobot-OAuth-Code";
+const OAUTH_CALLBACK_HEADER = "X-Nanobot-OAuth-Callback";
 const PROVIDER_VALUES_HEADER = "X-Nanobot-Provider-Values";
 
 export class ApiError extends Error {
@@ -165,6 +175,7 @@ export interface FetchWebuiThreadOptions {
   limit?: number;
   direction?: "latest";
   before?: string | null;
+  signal?: AbortSignal;
 }
 
 export async function fetchWebuiThread(
@@ -185,6 +196,8 @@ export async function fetchWebuiThread(
   const res = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${token}` },
     credentials: "same-origin",
+    cache: "no-store",
+    signal: options?.signal,
   });
   if (res.status === 404) return null;
   if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
@@ -296,6 +309,60 @@ export async function fetchSkills(
   );
 }
 
+// -- Memory graph (MemFS) --------------------------------------------------
+
+export async function fetchMemoryGraph(
+  token: string,
+  base: string = "",
+): Promise<MemoryGraphPayload> {
+  return request<MemoryGraphPayload>(
+    `${base}/api/webui/memory`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchMemoryFile(
+  token: string,
+  path: string,
+  base: string = "",
+): Promise<MemoryFilePayload> {
+  return request<MemoryFilePayload>(
+    `${base}/api/webui/memory/file?path=${encodeURIComponent(path)}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function saveMemoryFile(
+  token: string,
+  path: string,
+  content: string,
+  base: string = "",
+): Promise<MemoryFilePayload> {
+  return request<MemoryFilePayload>(
+    `${base}/api/webui/memory/save?path=${encodeURIComponent(path)}&content=${encodeURIComponent(content)}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchMemoryHistory(
+  token: string,
+  limit: number = 30,
+  base: string = "",
+): Promise<MemoryHistoryPayload> {
+  return request<MemoryHistoryPayload>(
+    `${base}/api/webui/memory/history?limit=${limit}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
 export async function fetchSkillDetail(
   token: string,
   name: string,
@@ -306,6 +373,93 @@ export async function fetchSkillDetail(
     token,
     undefined,
     API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function updateSkillEnabled(
+  token: string,
+  name: string,
+  enabled: boolean,
+  base: string = "",
+): Promise<SkillActionPayload> {
+  const params = new URLSearchParams({ name, enabled: String(enabled) });
+  return request<SkillActionPayload>(
+    `${base}/api/webui/skills/update?${params}`,
+    token,
+  );
+}
+
+export async function deleteSkill(
+  token: string,
+  name: string,
+  base: string = "",
+): Promise<SkillActionPayload> {
+  const params = new URLSearchParams({ name });
+  return request<SkillActionPayload>(
+    `${base}/api/webui/skills/delete?${params}`,
+    token,
+  );
+}
+
+export async function searchMarketplaceSkills(
+  token: string,
+  query: string,
+  provider: MarketplaceProvider = "all",
+  base: string = "",
+): Promise<SkillsSearchPayload> {
+  const params = new URLSearchParams({ q: query, provider });
+  return request<SkillsSearchPayload>(
+    `${base}/api/webui/skills/search?${params}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchTrendingMarketplaceSkills(
+  token: string,
+  provider: MarketplaceProvider = "all",
+  base: string = "",
+): Promise<SkillsTrendingPayload> {
+  const params = new URLSearchParams({ provider });
+  return request<SkillsTrendingPayload>(
+    `${base}/api/webui/skills/trending?${params}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function fetchMarketplaceSkillTrends(
+  token: string,
+  skillIds: string[],
+  base: string = "",
+): Promise<SkillsTrendsPayload> {
+  const params = new URLSearchParams();
+  skillIds.forEach((id) => params.append("id", id));
+  return request<SkillsTrendsPayload>(
+    `${base}/api/webui/skills/trends?${params}`,
+    token,
+    undefined,
+    API_READ_TIMEOUT_MS,
+  );
+}
+
+export async function installMarketplaceSkill(
+  token: string,
+  provider: Exclude<MarketplaceProvider, "all">,
+  source: string,
+  skill: string,
+  version: string = "",
+  base: string = "",
+): Promise<SkillInstallPayload> {
+  const params = new URLSearchParams({ provider, source, skill });
+  if (version) params.set("version", version);
+  return request<SkillInstallPayload>(
+    `${base}/api/webui/skills/install?${params}`,
+    token,
+    undefined,
+    150_000,
   );
 }
 
@@ -761,8 +915,6 @@ export async function updateSettings(
     query.set("context_window_tokens", String(update.contextWindowTokens));
   }
   if (update.timezone !== undefined) query.set("timezone", update.timezone);
-  if (update.botName !== undefined) query.set("bot_name", update.botName);
-  if (update.botIcon !== undefined) query.set("bot_icon", update.botIcon);
   if (update.toolHintMaxLength !== undefined) {
     query.set("tool_hint_max_length", String(update.toolHintMaxLength));
   }
@@ -896,9 +1048,11 @@ export async function loginProviderOAuth(
   token: string,
   provider: string,
   base: string = "",
+  remoteBrowserAccess: boolean = false,
 ): Promise<ProviderOAuthLoginResult> {
   const query = new URLSearchParams();
   query.set("provider", provider);
+  if (remoteBrowserAccess) query.set("remote_browser", "true");
   return request<ProviderOAuthLoginResult>(
     `${base}/api/settings/provider/oauth-login?${query}`,
     token,
@@ -910,13 +1064,18 @@ export async function completeProviderOAuth(
   token: string,
   provider: string,
   flowId: string,
-  authorizationCode?: string,
+  authorizationResponse?: string,
   base: string = "",
 ): Promise<ProviderOAuthCompletionResult> {
   const query = new URLSearchParams();
   query.set("provider", provider);
   query.set("flow_id", flowId);
-  const headers = authorizationCode ? { [OAUTH_CODE_HEADER]: authorizationCode } : undefined;
+  const responseHeader = provider === "openai_codex"
+    ? OAUTH_CALLBACK_HEADER
+    : OAUTH_CODE_HEADER;
+  const headers = authorizationResponse
+    ? { [responseHeader]: authorizationResponse }
+    : undefined;
   return request<ProviderOAuthCompletionResult>(
     `${base}/api/settings/provider/oauth-login/complete?${query}`,
     token,
