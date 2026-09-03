@@ -1756,8 +1756,30 @@ def _run_gateway(
         bus=bus,
         sessions=session_manager,
         schedule_background=lambda coro: agent._schedule_background(coro),
+        loop=agent,
     )
     webui_turn_coordinator.subscribe(runtime_events)
+
+    # Expose live context telemetry to the WebUI thread endpoint so a session
+    # shows accurate context usage as soon as it opens (no need to wait for a
+    # turn_end event). The function is stashed on the bus object, which is
+    # shared with the WebUI HTTP handler.
+    def _webui_context_telemetry(session_key: str) -> dict[str, int] | None:
+        try:
+            session = session_manager.get_or_create(session_key)
+            runtime = agent.runtime_for_session(session)
+            estimated, _ = agent.consolidator.estimate_session_prompt_tokens(
+                session,
+                runtime=runtime,
+            )
+            return {
+                "tokens_estimate": int(estimated),
+                "window_tokens": int(runtime.context_window_tokens),
+            }
+        except Exception:
+            return None
+
+    setattr(bus, "webui_context_telemetry", _webui_context_telemetry)
     from nanobot.bus.events import OutboundMessage
     from nanobot.session.keys import session_key_for_channel
 

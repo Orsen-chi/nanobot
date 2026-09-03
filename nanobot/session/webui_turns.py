@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import time
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from typing import Any
 from uuid import uuid4
@@ -305,6 +306,8 @@ class WebuiTurnCoordinator:
     sessions: SessionManager
     schedule_background: Callable[[Awaitable[None]], None]
     _title_contexts: dict[str, LLMRuntime] = field(default_factory=dict)
+    # Optional AgentLoop reference for live context-window telemetry.
+    loop: Any | None = None
 
     def subscribe(self, runtime_events: RuntimeEventBus) -> Callable[[], None]:
         """Subscribe this coordinator to runtime events."""
@@ -440,6 +443,17 @@ class WebuiTurnCoordinator:
             return
 
         session = self.sessions.get_or_create(session_key)
+        context_tokens_estimate: int | None = None
+        context_window_tokens: int | None = None
+        loop = self.loop
+        if loop is not None:
+            with suppress(Exception):
+                runtime = loop.runtime_for_session(session)
+                context_window_tokens = runtime.context_window_tokens
+                context_tokens_estimate, _ = loop.consolidator.estimate_session_prompt_tokens(
+                    session,
+                    runtime=runtime,
+                )
         await self.bus.publish_outbound(
             outbound_message_for_event(
                 channel=msg.channel,
@@ -447,6 +461,8 @@ class WebuiTurnCoordinator:
                 event=TurnEndEvent(
                     latency_ms=latency_ms,
                     goal_state=goal_state_ws_blob(session.metadata),
+                    context_tokens_estimate=context_tokens_estimate,
+                    context_window_tokens=context_window_tokens,
                 ),
                 metadata=msg.metadata,
             )

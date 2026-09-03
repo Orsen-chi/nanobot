@@ -833,6 +833,8 @@ class WebSocketChannel(BaseChannel):
                 latency_ms=event.latency_ms,
                 goal_state=event.goal_state,
                 metadata=msg.metadata,
+                context_tokens_estimate=event.context_tokens_estimate,
+                context_window_tokens=event.context_window_tokens,
             )
             await self.send_session_updated(msg.chat_id, scope="thread")
             return
@@ -1038,6 +1040,8 @@ class WebSocketChannel(BaseChannel):
         *,
         goal_state: dict[str, Any] | None = None,
         metadata: dict[str, Any] | None = None,
+        context_tokens_estimate: int | None = None,
+        context_window_tokens: int | None = None,
     ) -> None:
         """Signal that the agent has fully finished processing the current turn."""
         conns = list(self._subs.get(chat_id, ()))
@@ -1046,6 +1050,10 @@ class WebSocketChannel(BaseChannel):
             body["latency_ms"] = int(latency_ms)
         if goal_state is not None:
             body["goal_state"] = goal_state
+        if context_tokens_estimate is not None:
+            body["context_tokens_estimate"] = int(context_tokens_estimate)
+        if context_window_tokens is not None:
+            body["context_window_tokens"] = int(context_window_tokens)
         self._transcripts.prepare_and_append(
             chat_id,
             body,

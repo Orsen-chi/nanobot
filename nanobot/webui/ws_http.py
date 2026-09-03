@@ -490,6 +490,11 @@ class GatewayHTTPHandler:
         if data is None:
             return _http_error(404, "webui thread not found")
         data["workspace_scope"] = scope.payload()
+        telemetry_fn = getattr(self.bus, "webui_context_telemetry", None)
+        if callable(telemetry_fn):
+            telemetry = telemetry_fn(decoded_key)
+            if telemetry:
+                data["context_telemetry"] = telemetry
         return _http_json_response(data)
 
     def _handle_file_preview(self, request: WsRequest, key: str) -> Response:
@@ -775,6 +780,14 @@ class GatewayHTTPHandler:
             return self._handle_webui_sidebar_state(request)
         if got == "/api/webui/sidebar-state/update":
             return self._handle_webui_sidebar_state_update(request)
+        if got == "/api/webui/memory":
+            return self._handle_webui_memory_graph(request)
+        if got == "/api/webui/memory/file":
+            return self._handle_webui_memory_file(request)
+        if got == "/api/webui/memory/save":
+            return self._handle_webui_memory_save(request)
+        if got == "/api/webui/memory/history":
+            return self._handle_webui_memory_history(request)
         return None
 
     def _handle_commands(self, request: WsRequest) -> Response:
@@ -844,6 +857,69 @@ class GatewayHTTPHandler:
             self._log.exception("failed to write webui sidebar state")
             return _http_error(500, "failed to write sidebar state")
         return _http_json_response(state)
+
+    # -- Memory graph API (MemFS) -------------------------------------------
+
+    def _memory_workspace(self) -> Path:
+        # skills_workspace_path is the agent workspace root.
+        return self.skills_workspace_path
+
+    def _handle_webui_memory_graph(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        from nanobot.webui.memory_api import build_memory_graph
+
+        try:
+            return _http_json_response(build_memory_graph(self._memory_workspace()))
+        except Exception as e:
+            self._log.exception("memory graph failed")
+            return _http_error(500, f"memory graph failed: {e}")
+
+    def _handle_webui_memory_file(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        from nanobot.webui.memory_api import read_memory_file
+
+        query = _parse_query(request.path)
+        raw_path = _query_first(query, "path")
+        if not raw_path:
+            return _http_error(400, "missing path")
+        payload = read_memory_file(self._memory_workspace(), raw_path)
+        if payload is None:
+            return _http_error(404, "memory file not found")
+        return _http_json_response(payload)
+
+    def _handle_webui_memory_save(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        from nanobot.webui.memory_api import write_memory_file
+
+        query = _parse_query(request.path)
+        raw_path = _query_first(query, "path")
+        content = _query_first(query, "content")
+        if not raw_path or content is None:
+            return _http_error(400, "missing path or content")
+        payload = write_memory_file(self._memory_workspace(), raw_path, content)
+        if payload is None:
+            return _http_error(403, "path outside memory tree or not a markdown file")
+        return _http_json_response(payload)
+
+    def _handle_webui_memory_history(self, request: WsRequest) -> Response:
+        if not self.check_api_token(request):
+            return _http_error(401, "Unauthorized")
+        from nanobot.webui.memory_api import memory_history
+
+        query = _parse_query(request.path)
+        raw_limit = _query_first(query, "limit")
+        try:
+            limit = min(int(raw_limit), 200) if raw_limit else 30
+        except ValueError:
+            limit = 30
+        try:
+            return _http_json_response({"history": memory_history(self._memory_workspace(), limit)})
+        except Exception as e:
+            self._log.exception("memory history failed")
+            return _http_error(500, f"memory history failed: {e}")
 
     # -- Static file serving ------------------------------------------------
 
