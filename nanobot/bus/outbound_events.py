@@ -57,6 +57,11 @@ class StreamedResponseEvent(OutboundEvent):
 class TurnEndEvent(OutboundEvent):
     latency_ms: int | None = None
     goal_state: dict[str, Any] | None = None
+    # Live context-window telemetry for the WebUI context meter.
+    # ``context_tokens_estimate`` is the consolidated prompt-size estimate
+    # (system prompt + tool definitions + full unconsolidated session tail).
+    context_tokens_estimate: int | None = None
+    context_window_tokens: int | None = None
 
 
 @dataclass(frozen=True)
