@@ -50,11 +50,20 @@ class MemoryStore:
     # Durable files whose real working-tree delta grounds Dream commit messages
     # and the cursor-advance gate. Deliberately excludes memory/.dream_cursor so
     # that advancing the cursor itself is never mistaken for a productive edit.
-    _DREAM_CONTENT_PATHS = ("SOUL.md", "USER.md", "memory/MEMORY.md")
-    # Per-file cap when embedding current contents into the Dream prompt. The
-    # durable files are tiny in practice (~5 KB total), but a runaway file must
-    # not unbounded the prompt.
-    _DREAM_FILE_EMBED_CAP = 8000
+    # MemFS: memory/system blocks are always injected; other subdirs (projects,
+    # user, habits, infra, ...) are indexed only and loaded on demand. Subdirs
+    # are discovered dynamically so new semantic categories work without code.
+    _DREAM_CONTENT_PATHS = (
+        "SOUL.md",
+        "USER.md",
+        "memory/MEMORY.md",
+    )
+    # Per-file cap when embedding current contents into the Dream prompt.
+    # Content past the cap is invisible to Dream, which defeats pruning and
+    # split decisions — keep it generous. Compliant blocks (≤200 lines, dense
+    # CJK) stay under ~30 KB, so 32000 chars covers them whole while still
+    # bounding a runaway file.
+    _DREAM_FILE_EMBED_CAP = 32000
     _INTERNAL_HISTORY_SESSION_PREFIXES = ("cron:", "dream:")
     _INTERNAL_HISTORY_SESSION_KEYS = {"heartbeat"}
     _LEGACY_ENTRY_START_RE = re.compile(r"^\[(\d{4}-\d{2}-\d{2}[^\]]*)\]\s*")
@@ -68,6 +77,7 @@ class MemoryStore:
         self.max_history_entries = max_history_entries
         self.memory_dir = ensure_dir(workspace / "memory")
         self.memory_file = self.memory_dir / "MEMORY.md"
+        self.system_dir = ensure_dir(self.memory_dir / "system")  # MemFS: always injected
         self.history_file = self.memory_dir / "history.jsonl"
         self.legacy_history_file = self.memory_dir / "HISTORY.md"
         self.soul_file = workspace / "SOUL.md"
@@ -79,9 +89,12 @@ class MemoryStore:
         self._oversize_logged = False  # rate-limit oversized-entry warning
         self._dream_prompt_oversize_logged = False
         self._append_lock = threading.Lock()  # serialize cursor allocation + append
-        self._git = GitStore(workspace, tracked_files=[
+        tracked = [
             "SOUL.md", "USER.md", "memory/MEMORY.md", "memory/.dream_cursor",
-        ])
+            "memory/system/",
+        ]
+        tracked += [f"memory/{d}/" for d in self.list_block_dirs() if d != "system"]
+        self._git = GitStore(workspace, tracked_files=tracked)
         self._maybe_migrate_legacy_history()
 
     @property
@@ -221,10 +234,88 @@ class MemoryStore:
     # -- MEMORY.md (long-term facts) -----------------------------------------
 
     def read_memory(self) -> str:
-        return self.read_file(self.memory_file)
+        """Read long-term memory.
+
+        Backward compatible: returns ``memory/MEMORY.md`` when present;
+        otherwise aggregates the MemFS ``system/`` blocks so SDK/API readers
+        keep getting the durable memory content.
+        """
+        if self.memory_file.exists():
+            return self.read_file(self.memory_file)
+        blocks = self.list_blocks("system")
+        if not blocks:
+            return ""
+        parts = []
+        for path in blocks:
+            desc, body = self.parse_block(path)
+            header = f"## {path.stem}"
+            if desc:
+                header += f" ({desc})"
+            parts.append(f"{header}\n{body.rstrip()}")
+        return "\n\n".join(parts)
 
     def write_memory(self, content: str) -> None:
         self.memory_file.write_text(content, encoding="utf-8")
+
+    # -- MemFS blocks (memory/system always-injected; other subdirs on demand) --
+
+    def list_block_dirs(self) -> list[str]:
+        """Return memory subdirs that contain ``*.md`` block files.
+
+        ``system`` sorts first (always injected); the rest are semantic
+        categories (projects/, user/, habits/, infra/, ...) indexed only.
+        """
+        if not self.memory_dir.is_dir():
+            return []
+        dirs = []
+        for d in sorted(self.memory_dir.iterdir()):
+            if d.is_dir() and not d.name.startswith(".") and any(d.glob("*.md")):
+                dirs.append(d.name)
+        return sorted(dirs, key=lambda x: (x != "system", x))
+
+    def list_blocks(self, subdir: str) -> list[Path]:
+        """Return sorted ``*.md`` block files under ``memory/<subdir>``."""
+        d = self.memory_dir / subdir
+        if not d.is_dir():
+            return []
+        return sorted(d.glob("*.md"))
+
+    def read_block(self, path: Path) -> str:
+        """Read a block file's body (frontmatter stripped)."""
+        _desc, body = self.parse_block(path)
+        return body
+
+    @staticmethod
+    def parse_block(path: Path) -> tuple[str, str]:
+        """Parse a MemFS markdown block into ``(description, body)``.
+
+        Blocks use Letta MemFS format: an optional YAML ``description:``
+        frontmatter followed by the markdown body. Files without frontmatter
+        are treated as value-only (backward compatible).
+        """
+        text = MemoryStore.read_file(path)
+        if not text.startswith("---\n"):
+            return "", text
+        end = text.find("\n---\n", 4)
+        if end == -1:
+            return "", text
+        fm = text[4:end]
+        body = text[end + 5:]
+        desc = ""
+        for line in fm.splitlines():
+            if line.startswith("description:"):
+                desc = line.split(":", 1)[1].strip().strip('"').strip("'")
+                break
+        return desc, body
+
+    def write_block(self, path: Path, body: str, description: str = "") -> None:
+        """Write a MemFS block file, preserving a ``description`` frontmatter."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if description:
+            content = f"---\ndescription: {description}\n---\n{body}"
+        else:
+            content = body
+        path.write_text(content, encoding="utf-8")
 
     # -- SOUL.md -------------------------------------------------------------
 
@@ -245,8 +336,69 @@ class MemoryStore:
     # -- context injection (used by context.py) ------------------------------
 
     def get_memory_context(self) -> str:
-        long_term = self.read_memory()
-        return f"## Long-term Memory\n{long_term}" if long_term else ""
+        """Render memory for the system prompt (MemFS layout).
+
+        - ``memory/system/*.md`` blocks are rendered in full (always injected).
+        - Every other ``memory/<category>/*.md`` directory (projects/, user/,
+          habits/, infra/, ...) is rendered as an index tree with descriptions
+          (progressive disclosure; content loaded on demand).
+        - Legacy ``memory/MEMORY.md`` is appended when it exists and still
+          carries custom content (migration fallback).
+        """
+        sections: list[str] = []
+
+        # 1) system/ blocks: full content with description + projection path
+        system_blocks = self.list_blocks("system")
+        if system_blocks:
+            rendered = []
+            for path in system_blocks:
+                desc, body = self.parse_block(path)
+                label = path.stem
+                header = f"### {label}"
+                if desc:
+                    header += f" — {desc}"
+                rendered.append(header)
+                rendered.append(f"<projection>memory/system/{path.name}</projection>")
+                rendered.append(body.rstrip("\n") if body.strip() else "(empty)")
+            sections.append("# Memory Blocks\n" + "\n\n".join(rendered))
+
+        # 2) other subdirs: index tree with descriptions only
+        index_dirs = [d for d in self.list_block_dirs() if d != "system"]
+        if index_dirs:
+            tree_lines = ["# Reference Blocks (load on demand)", "```", "memory/"]
+            for d in index_dirs:
+                files = self.list_blocks(d)
+                if not files:
+                    continue
+                tree_lines.append(f"├── {d}/")
+                for i, path in enumerate(files):
+                    desc, _body = self.parse_block(path)
+                    suffix = f" ({desc})" if desc else ""
+                    connector = "└── " if i == len(files) - 1 else "├── "
+                    tree_lines.append(f"│   {connector}{path.name}{suffix}")
+            tree_lines.append("```")
+            sections.append("\n".join(tree_lines))
+
+        # 3) legacy MEMORY.md fallback (skip the untouched bundled template;
+        #    only when the file itself still exists — read_memory() aggregates
+        #    system/ blocks and must not be double-rendered here)
+        if self.memory_file.exists():
+            legacy = self.read_file(self.memory_file)
+            if legacy.strip() and not self._is_default_memory_template(legacy):
+                sections.append(f"## Long-term Memory\n{legacy}")
+
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _is_default_memory_template(content: str) -> bool:
+        """True when *content* is the untouched bundled MEMORY.md template."""
+        try:
+            from nanobot.utils.helpers import load_bundled_template
+
+            tpl = load_bundled_template("memory/MEMORY.md")
+            return tpl is not None and content.strip() == tpl.strip()
+        except Exception:
+            return False
 
     # -- history.jsonl — append-only, JSONL format ---------------------------
 
@@ -566,8 +718,14 @@ class MemoryStore:
         files = [
             ("SOUL.md", self.soul_file),
             ("USER.md", self.user_file),
-            ("memory/MEMORY.md", self.memory_file),
         ]
+        # Legacy MEMORY.md only when it still exists (migration complete → gone).
+        if self.memory_file.exists():
+            files.append(("memory/MEMORY.md", self.memory_file))
+        # MemFS: include every block file across all semantic subdirs.
+        for subdir in self.list_block_dirs():
+            for path in self.list_blocks(subdir):
+                files.append((f"memory/{subdir}/{path.name}", path))
         blocks = []
         for label, path in files:
             try:
@@ -588,7 +746,24 @@ class MemoryStore:
         """
         if not self._git.is_initialized():
             return ""
-        return self._git.summarize_working_tree(list(self._DREAM_CONTENT_PATHS))
+        # Expand MemFS directories into concrete tracked files; directories
+        # themselves are not readable blobs.
+        paths: list[str] = []
+        for entry in self._DREAM_CONTENT_PATHS:
+            if entry.startswith("memory/") and not entry.endswith(".md"):
+                subdir = entry[len("memory/"):].rstrip("/")
+                for path in self.list_blocks(subdir):
+                    paths.append(f"memory/{subdir}/{path.name}")
+            else:
+                paths.append(entry)
+        # MemFS: every semantic block subdir is durable content, not just
+        # SOUL/USER/MEMORY.md. Discover dynamically so new categories work.
+        for subdir in self.list_block_dirs():
+            for path in self.list_blocks(subdir):
+                rel = f"memory/{subdir}/{path.name}"
+                if rel not in paths:
+                    paths.append(rel)
+        return self._git.summarize_working_tree(paths)
 
     def build_dream_tools(self):
         """Build the restricted tool registry used by Dream runs."""
@@ -605,7 +780,22 @@ class MemoryStore:
         skills_dir.mkdir(parents=True, exist_ok=True)
 
         extra_read = [BUILTIN_SKILLS_DIR] if BUILTIN_SKILLS_DIR.exists() else None
-        editable_files = [self.memory_file, self.soul_file, self.user_file]
+        editable_files = [self.soul_file, self.user_file]
+        # Legacy MEMORY.md only when it still exists (migration complete → gone).
+        if self.memory_file.exists():
+            editable_files.append(self.memory_file)
+        # MemFS: Dream may edit every block file across all semantic subdirs.
+        for subdir in self.list_block_dirs():
+            for path in self.list_blocks(subdir):
+                editable_files.append(path)
+        # MemFS: Dream may also CREATE new block files inside existing semantic
+        # subdirs — splitting an oversize block needs a new destination file.
+        # Scoped to indexed subdirs only; system/ stays edit-only (a brand-new
+        # always-injected block would bloat every turn's context), and memory/
+        # root files (history.jsonl, .cursor, .dream_cursor) stay write-protected.
+        writable_block_dirs = [
+            self.memory_dir / d for d in self.list_block_dirs() if d != "system"
+        ]
 
         tools.register(ReadFileTool(
             workspace=workspace,
@@ -616,18 +806,21 @@ class MemoryStore:
         tools.register(EditFileTool(
             workspace=workspace,
             allowed_dir=skills_dir,
+            extra_write_allowed_dirs=writable_block_dirs,
             extra_write_allowed_files=editable_files,
             file_states=file_states,
         ))
         tools.register(ApplyPatchTool(
             workspace=workspace,
             allowed_dir=skills_dir,
+            extra_write_allowed_dirs=writable_block_dirs,
             extra_write_allowed_files=editable_files,
             file_states=file_states,
         ))
         tools.register(WriteFileTool(
             workspace=workspace,
             allowed_dir=skills_dir,
+            extra_write_allowed_dirs=writable_block_dirs,
             file_states=file_states,
         ))
         return tools

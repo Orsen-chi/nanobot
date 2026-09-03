@@ -88,7 +88,7 @@ class ContextBuilder:
         parts.append(render_template("agent/tool_contract.md"))
 
         memory = self.memory.get_memory_context()
-        if memory and not self._is_template_content(self.memory.read_memory(), "memory/MEMORY.md"):
+        if memory:
             parts.append(f"# Memory\n\n{memory}")
 
         always_skills = self.skills.get_always_skills()

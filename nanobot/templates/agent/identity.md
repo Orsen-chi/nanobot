@@ -7,7 +7,7 @@ Your current project workspace is at: {{ workspace_path }}
 Nanobot's agent workspace is at: {{ agent_workspace_path }}
 {% endif %}
 - Agent profile: {{ agent_workspace_path }}/SOUL.md and {{ agent_workspace_path }}/USER.md (automatically managed by Dream — do not edit directly)
-- Long-term memory: {{ agent_workspace_path }}/memory/MEMORY.md (automatically managed by Dream — do not edit directly)
+- Long-term memory: {{ agent_workspace_path }}/memory/system/*.md (always injected, Dream-managed) + {{ agent_workspace_path }}/memory/<category>/*.md (indexed, load on demand; categories like projects/, user/, habits/, infra/)
 - History log: {{ agent_workspace_path }}/memory/history.jsonl (append-only JSONL; prefer built-in `grep` for search).
 - Custom skills: {{ agent_workspace_path }}/skills/{% raw %}{skill-name}{% endraw %}/SKILL.md
 
