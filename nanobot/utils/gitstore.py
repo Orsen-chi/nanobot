@@ -109,9 +109,13 @@ class GitStore:
                 gitignore.write_text(dream_entries, encoding="utf-8")
 
             # Ensure tracked files exist (touch them if missing) so the initial
-            # commit has something to track.
+            # commit has something to track. Directory entries (trailing "/")
+            # are created with mkdir instead of being touched as files.
             for rel in self._tracked_files:
                 p = self._workspace / rel
+                if rel.endswith("/") or p.is_dir():
+                    p.mkdir(parents=True, exist_ok=True)
+                    continue
                 p.parent.mkdir(parents=True, exist_ok=True)
                 if not p.exists():
                     p.write_text("", encoding="utf-8")
@@ -171,7 +175,7 @@ class GitStore:
 
     def _staging_paths(self, *paths: str) -> list[str]:
         """Return absolute paths without resolving tracked-file symlinks."""
-        return [str((self._workspace / path).absolute()) for path in paths]
+        return [str((self._workspace / path.rstrip("/")).absolute()) for path in paths]
 
     def _resolve_sha(self, short_sha: str) -> bytes | None:
         """Resolve a short SHA prefix to the full SHA bytes."""
@@ -212,17 +216,25 @@ class GitStore:
         return False
 
     def _build_gitignore(self) -> str:
-        """Generate .gitignore content from tracked files."""
+        """Generate .gitignore content from tracked files.
+
+        Directory entries (trailing "/") are emitted with a trailing slash so
+        git treats them as directory whitelists (their contents stay visible).
+        """
         dirs: set[str] = set()
         for f in self._tracked_files:
+            if f.endswith("/"):
+                dirs.add(f)
+                continue
             parent = str(Path(f).parent)
             if parent != ".":
-                dirs.add(parent)
+                dirs.add(parent + "/")
         lines = ["/*"]
         for d in sorted(dirs):
-            lines.append(f"!{d}/")
+            lines.append(f"!{d}")
         for f in self._tracked_files:
-            lines.append(f"!{f}")
+            if not f.endswith("/"):
+                lines.append(f"!{f}")
         lines.append("!.gitignore")
         return "\n".join(lines) + "\n"
 
