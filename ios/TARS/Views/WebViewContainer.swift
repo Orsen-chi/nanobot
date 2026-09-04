@@ -28,27 +28,43 @@ public struct WebViewContainer: UIViewRepresentable {
         configuration.allowsInlineMediaPlayback = true
         configuration.mediaTypesRequiringUserActionForPlayback = []
         
-        // 允许跨域存储与 Cookie
         let preferences = WKWebpagePreferences()
         preferences.allowsContentJavaScript = true
         configuration.defaultWebpagePreferences = preferences
         
-        // 注入客户端标识与鉴权脚本
         let userContentController = WKUserContentController()
         
-        // 注入 TARS 宿主标记以及自动鉴权脚本
-        let secret = config.bootstrapSecret.replacingOccurrences(of: "'", with: "\'")
+        let secret = config.bootstrapSecret.replacingOccurrences(of: "'", with: "\\'")
         let injectionJS = """
         (function() {
             window.__TARS_NATIVE__ = true;
             window.__TARS_VERSION__ = '1.0.0';
+            
+            // 自动注入认证凭证
             const secret = '(secret)';
             if (secret && secret.length > 0) {
                 try {
                     window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);
                 } catch(e) {}
             }
-            // 提供原生振动反馈接口给 WebUI
+            
+            // 确保现代 iPhone 全面屏视口与真实比例，禁止异常双击放大
+            function fixViewport() {
+                let meta = document.querySelector('meta[name="viewport"]');
+                const content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.name = 'viewport';
+                    document.head.appendChild(meta);
+                }
+                meta.setAttribute('content', content);
+            }
+            fixViewport();
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', fixViewport);
+            }
+            
+            // 原生触觉振动接口
             window.tarsHaptic = function(type) {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tarsHaptic) {
                     window.webkit.messageHandlers.tarsHaptic.postMessage(type || 'medium');
@@ -62,15 +78,13 @@ public struct WebViewContainer: UIViewRepresentable {
             forMainFrameOnly: false
         )
         userContentController.addUserScript(userScript)
-        
-        // 注册 Haptic 消息桥接
         userContentController.add(context.coordinator, name: "tarsHaptic")
         configuration.userContentController = userContentController
         
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
-        webView.scrollView.contentInsetAdjustmentBehavior = .always
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.allowsBackForwardNavigationGestures = true
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
@@ -107,9 +121,8 @@ public struct WebViewContainer: UIViewRepresentable {
             request.timeoutInterval = 30
             request.cachePolicy = .useProtocolCachePolicy
             
-            // 如果配置了 secret，在初次请求头中附带
             if !parent.config.bootstrapSecret.isEmpty {
-                request.setValue("Bearer (parent.config.bootstrapSecret)", forHTTPHeaderField: "Authorization")
+                request.setValue("Bearer \(parent.config.bootstrapSecret)", forHTTPHeaderField: "Authorization")
                 request.setValue(parent.config.bootstrapSecret, forHTTPHeaderField: "X-Nanobot-Auth")
             }
             
@@ -117,8 +130,6 @@ public struct WebViewContainer: UIViewRepresentable {
             parent.loadError = nil
             webView.load(request)
         }
-        
-        // MARK: - WKNavigationDelegate
         
         public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             DispatchQueue.main.async {
@@ -145,7 +156,6 @@ public struct WebViewContainer: UIViewRepresentable {
         private func handleError(_ error: Error) {
             let nsError = error as NSError
             if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
-                // 用户中断或页面重定向，非致命错误
                 return
             }
             DispatchQueue.main.async {
@@ -153,8 +163,6 @@ public struct WebViewContainer: UIViewRepresentable {
                 self.parent.loadError = error
             }
         }
-        
-        // MARK: - WKUIDelegate (麦克风/摄像头权限透传)
         
         @available(iOS 15.0, *)
         public func webView(
@@ -166,8 +174,6 @@ public struct WebViewContainer: UIViewRepresentable {
         ) {
             decisionHandler(.grant)
         }
-        
-        // MARK: - WKScriptMessageHandler
         
         public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == "tarsHaptic", let type = message.body as? String else { return }
@@ -192,3 +198,4 @@ public struct WebViewContainer: UIViewRepresentable {
         }
     }
 }
+

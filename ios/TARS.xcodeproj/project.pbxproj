@@ -12,6 +12,7 @@
 		8B5F12C17F719160A17E7CBA /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BC7BF5F31A302B22ACF65C4 /* SettingsSheet.swift */; };
 		8E2FFF5B00128DAD7CF33D00 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73C5763E627E1BC355A28055 /* ContentView.swift */; };
 		BDAA887E605DB39CBA84E20F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 1AFD02AAF9A667DAACE52354 /* Assets.xcassets */; };
+		C3B784E8A0B875683A79A271 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AD342A614410673D75C09919 /* LaunchScreen.storyboard */; };
 		F38600852C3BA7089B9B17BF /* TARSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ABCE953763BDCC0BD112D5E /* TARSApp.swift */; };
 /* End PBXBuildFile section */
 
@@ -23,6 +24,7 @@
 		6F959EF965191DD850394EBE /* WebViewContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewContainer.swift; sourceTree = "<group>"; };
 		73C5763E627E1BC355A28055 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		7BC7BF5F31A302B22ACF65C4 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
+		AD342A614410673D75C09919 /* LaunchScreen.storyboard */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
 		EBECE119D02766244D9172EB /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerConfig.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -51,6 +53,7 @@
 			children = (
 				1AFD02AAF9A667DAACE52354 /* Assets.xcassets */,
 				5222B778D953E33FE8D7273F /* Info.plist */,
+				AD342A614410673D75C09919 /* LaunchScreen.storyboard */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -149,6 +152,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BDAA887E605DB39CBA84E20F /* Assets.xcassets in Resources */,
+				C3B784E8A0B875683A79A271 /* LaunchScreen.storyboard in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -251,6 +255,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.orsen.tars;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				UILaunchStoryboardName = LaunchScreen;
 			};
 			name = Debug;
 		};
@@ -328,6 +333,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.orsen.tars;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+				UILaunchStoryboardName = LaunchScreen;
 			};
 			name = Release;
 		};

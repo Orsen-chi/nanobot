@@ -1,6 +1,5 @@
 import SwiftUI
 
-// 扩展摇一摇检测
 extension NSNotification.Name {
     static let deviceDidShakeNotification = NSNotification.Name("deviceDidShakeNotification")
 }
@@ -20,7 +19,6 @@ public struct ContentView: View {
     @State private var loadError: Error? = nil
     @State private var reloadTrigger: UUID = UUID()
     @State private var showSettings: Bool = false
-    @State private var floatingControlsVisible: Bool = true
     
     public init() {}
     
@@ -29,16 +27,16 @@ public struct ContentView: View {
             Color(.systemBackground)
                 .ignoresSafeArea()
             
-            // 核心 WebUI 容器
+            // 核心 WebUI 容器，真正铺满现代 iPhone 全屏幕
             WebViewContainer(
                 config: config,
                 isLoading: $isLoading,
                 loadError: $loadError,
                 reloadTrigger: $reloadTrigger
             )
-            .ignoresSafeArea(.keyboard, edges: .bottom)
+            .ignoresSafeArea()
             
-            // 顶部优雅加载指示器
+            // 顶部细条加载进度
             VStack {
                 if isLoading {
                     ProgressView()
@@ -50,7 +48,7 @@ public struct ContentView: View {
             }
             .ignoresSafeArea(.all, edges: .horizontal)
             
-            // 离线/异常友好兜底卡片
+            // 离线/异常兜底卡片
             if let error = loadError {
                 errorOverlay(error)
             }
@@ -75,7 +73,6 @@ public struct ContentView: View {
         }
     }
     
-    // MARK: - 悬浮控制工具栏
     private var floatingToolbar: some View {
         HStack(spacing: 12) {
             Button {
@@ -111,7 +108,6 @@ public struct ContentView: View {
         .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 4)
     }
     
-    // MARK: - 错误状态覆盖层
     private func errorOverlay(_ error: Error) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "wifi.exclamationmark")
@@ -158,3 +154,4 @@ public struct ContentView: View {
         .padding(24)
     }
 }
+

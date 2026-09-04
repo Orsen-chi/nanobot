@@ -31,3 +31,15 @@ targets:
         INFOPLIST_FILE: TARS/Resources/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
+        UILaunchStoryboardName: LaunchScreen
+    scheme:
+      gatherCoverageData: false
+
+schemes:
+  TARS:
+    build:
+      targets:
+        TARS: all
+    run:
+      config: Debug
+
