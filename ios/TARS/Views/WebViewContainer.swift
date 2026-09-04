@@ -34,21 +34,15 @@ public struct WebViewContainer: UIViewRepresentable {
         
         let userContentController = WKUserContentController()
         
-        let secret = config.bootstrapSecret.replacingOccurrences(of: "'", with: "\\'")
+        let secret = config.bootstrapSecret.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
         let injectionJS = """
         (function() {
             window.__TARS_NATIVE__ = true;
             window.__TARS_VERSION__ = '1.0.0';
             
-            // 自动注入认证凭证
             const secret = '(secret)';
-            if (secret && secret.length > 0) {
-                try {
-                    window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);
-                } catch(e) {}
-            }
             
-            // 确保现代 iPhone 全面屏视口与真实比例，禁止异常双击放大
+            // 1. 确保现代 iPhone 全面屏视口铺满且比例正确
             function fixViewport() {
                 let meta = document.querySelector('meta[name="viewport"]');
                 const content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
@@ -64,7 +58,48 @@ public struct WebViewContainer: UIViewRepresentable {
                 document.addEventListener('DOMContentLoaded', fixViewport);
             }
             
-            // 原生触觉振动接口
+            // 2. 自动注入凭证与表单秒级自动提交
+            function attemptAutoAuth() {
+                if (!secret || secret.length === 0) return;
+                try {
+                    window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);
+                } catch(e) {}
+                
+                // 查找密码框 (NanoBot 的 id 是 webui-access-password)
+                const input = document.getElementById('webui-access-password') || document.querySelector('input[type="password"]');
+                if (input && !input.disabled) {
+                    if (input.value !== secret) {
+                        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                        if (setter) {
+                            setter.call(input, secret);
+                        } else {
+                            input.value = secret;
+                        }
+                        input.dispatchEvent(new Event('input', { bubbles: true }));
+                        input.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                    
+                    const form = input.closest('form');
+                    if (form) {
+                        const submitBtn = form.querySelector('button[type="submit"]');
+                        if (submitBtn && !submitBtn.disabled) {
+                            submitBtn.click();
+                        } else if (form.requestSubmit) {
+                            form.requestSubmit();
+                        }
+                    }
+                }
+            }
+            
+            attemptAutoAuth();
+            
+            // DOM 变更监听：一旦 React 渲染出 AuthForm 立即自动填密并提交
+            try {
+                const observer = new MutationObserver(attemptAutoAuth);
+                observer.observe(document.documentElement, { childList: true, subtree: true });
+            } catch(e) {}
+            
+            // 3. 原生触觉反馈接口
             window.tarsHaptic = function(type) {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tarsHaptic) {
                     window.webkit.messageHandlers.tarsHaptic.postMessage(type || 'medium');
@@ -113,7 +148,9 @@ public struct WebViewContainer: UIViewRepresentable {
         
         func loadTarget(in webView: WKWebView) {
             guard let url = parent.config.targetURL else {
-                parent.loadError = URLError(.badURL)
+                DispatchQueue.main.async {
+                    self.parent.loadError = URLError(.badURL)
+                }
                 return
             }
             
@@ -126,8 +163,10 @@ public struct WebViewContainer: UIViewRepresentable {
                 request.setValue(parent.config.bootstrapSecret, forHTTPHeaderField: "X-Nanobot-Auth")
             }
             
-            parent.isLoading = true
-            parent.loadError = nil
+            DispatchQueue.main.async {
+                self.parent.isLoading = true
+                self.parent.loadError = nil
+            }
             webView.load(request)
         }
         
@@ -143,6 +182,29 @@ public struct WebViewContainer: UIViewRepresentable {
                 self.parent.isLoading = false
                 self.parent.loadError = nil
             }
+            
+            // 页面加载完成后，再次主动执行一次自动注入与认证
+            let secret = parent.config.bootstrapSecret.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
+            let checkAuthJS = """
+            (function() {
+                const secret = '(secret)';
+                if (!secret) return;
+                try { window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret); } catch(e) {}
+                const input = document.getElementById('webui-access-password');
+                if (input && !input.disabled) {
+                    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                    if (setter) { setter.call(input, secret); } else { input.value = secret; }
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    input.dispatchEvent(new Event('change', { bubbles: true }));
+                    const form = input.closest('form');
+                    if (form) {
+                        const submitBtn = form.querySelector('button[type="submit"]');
+                        if (submitBtn && !submitBtn.disabled) { submitBtn.click(); }
+                    }
+                }
+            })();
+            """
+            webView.evaluateJavaScript(checkAuthJS, completionHandler: nil)
         }
         
         public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
