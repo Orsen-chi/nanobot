@@ -14,6 +14,10 @@ export class BootstrapAuthRequiredError extends Error {
 /** Read a previously saved bootstrap secret from localStorage. */
 export function loadSavedSecret(): string {
   if (typeof window === "undefined") return "";
+  const nativeSecret = (window as unknown as { __TARS_BOOTSTRAP_SECRET__?: string }).__TARS_BOOTSTRAP_SECRET__;
+  if (typeof nativeSecret === "string" && nativeSecret.trim().length > 0) {
+    return nativeSecret.trim();
+  }
   try {
     return window.localStorage.getItem(SECRET_STORAGE_KEY) ?? "";
   } catch {

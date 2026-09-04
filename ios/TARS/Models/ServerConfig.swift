@@ -7,6 +7,7 @@ public final class ServerConfig: ObservableObject {
     private enum Keys {
         static let serverURL = "tars_server_url"
         static let bootstrapSecret = "tars_bootstrap_secret"
+        static let configVersion = "tars_secret_config_version_v3"
     }
     
     public static let defaultServerURL = "https://openclaw.dengdeng-2047.com"
@@ -28,12 +29,20 @@ public final class ServerConfig: ObservableObject {
         let savedURL = UserDefaults.standard.string(forKey: Keys.serverURL)?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.serverURL = (savedURL?.isEmpty == false) ? savedURL! : Self.defaultServerURL
         
-        let savedSecret = UserDefaults.standard.string(forKey: Keys.bootstrapSecret)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let savedSecret = savedSecret, !savedSecret.isEmpty {
-            self.bootstrapSecret = savedSecret
-        } else {
+        // 检查配置版本，如果版本不匹配，强制覆盖真机沙盒中残留的旧错误凭证
+        let currentVersion = UserDefaults.standard.integer(forKey: Keys.configVersion)
+        if currentVersion < 3 {
             self.bootstrapSecret = Self.defaultBootstrapSecret
             UserDefaults.standard.set(Self.defaultBootstrapSecret, forKey: Keys.bootstrapSecret)
+            UserDefaults.standard.set(3, forKey: Keys.configVersion)
+        } else {
+            let savedSecret = UserDefaults.standard.string(forKey: Keys.bootstrapSecret)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let savedSecret = savedSecret, !savedSecret.isEmpty {
+                self.bootstrapSecret = savedSecret
+            } else {
+                self.bootstrapSecret = Self.defaultBootstrapSecret
+                UserDefaults.standard.set(Self.defaultBootstrapSecret, forKey: Keys.bootstrapSecret)
+            }
         }
     }
     
@@ -65,6 +74,8 @@ public final class ServerConfig: ObservableObject {
     public func resetToDefaults() {
         self.serverURL = Self.defaultServerURL
         self.bootstrapSecret = Self.defaultBootstrapSecret
+        UserDefaults.standard.set(Self.defaultBootstrapSecret, forKey: Keys.bootstrapSecret)
+        UserDefaults.standard.set(3, forKey: Keys.configVersion)
     }
 }
 

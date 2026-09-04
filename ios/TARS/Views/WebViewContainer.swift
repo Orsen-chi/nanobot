@@ -39,67 +39,42 @@ public struct WebViewContainer: UIViewRepresentable {
         (function() {
             window.__TARS_NATIVE__ = true;
             window.__TARS_VERSION__ = '1.0.0';
+            window.__TARS_BOOTSTRAP_SECRET__ = '(secret)';
             
-            const secret = '(secret)';
-            
-            // 1. 确保现代 iPhone 全面屏视口铺满且比例正确
-            function fixViewport() {
+            // 1. 强制铺满全屏视口，禁用误触缩放，修复渲染比例
+            function applyViewport() {
                 let meta = document.querySelector('meta[name="viewport"]');
-                const content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
+                const desired = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
                 if (!meta) {
                     meta = document.createElement('meta');
                     meta.name = 'viewport';
                     document.head.appendChild(meta);
                 }
-                meta.setAttribute('content', content);
+                meta.setAttribute('content', desired);
+                
+                // 注入禁止 iOS Safari 键盘弹出自动放大页面样式的 CSS (input font-size 强制 >= 16px)
+                let style = document.getElementById('tars-ios-style');
+                if (!style) {
+                    style = document.createElement('style');
+                    style.id = 'tars-ios-style';
+                    style.innerHTML = 'html, body, #root { width: 100% !important; height: 100% !important; margin: 0 !important; padding: 0 !important; -webkit-text-size-adjust: 100% !important; } input, select, textarea { font-size: 16px !important; } * { -webkit-tap-highlight-color: transparent; }';
+                    document.head.appendChild(style);
+                }
             }
-            fixViewport();
+            applyViewport();
             if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', fixViewport);
+                document.addEventListener('DOMContentLoaded', applyViewport);
             }
             
-            // 2. 自动注入凭证与表单秒级自动提交
-            function attemptAutoAuth() {
-                if (!secret || secret.length === 0) return;
+            // 2. 注入 localStorage 凭据
+            const secret = '(secret)';
+            if (secret && secret.length > 0) {
                 try {
                     window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);
                 } catch(e) {}
-                
-                // 查找密码框 (NanoBot 的 id 是 webui-access-password)
-                const input = document.getElementById('webui-access-password') || document.querySelector('input[type="password"]');
-                if (input && !input.disabled) {
-                    if (input.value !== secret) {
-                        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-                        if (setter) {
-                            setter.call(input, secret);
-                        } else {
-                            input.value = secret;
-                        }
-                        input.dispatchEvent(new Event('input', { bubbles: true }));
-                        input.dispatchEvent(new Event('change', { bubbles: true }));
-                    }
-                    
-                    const form = input.closest('form');
-                    if (form) {
-                        const submitBtn = form.querySelector('button[type="submit"]');
-                        if (submitBtn && !submitBtn.disabled) {
-                            submitBtn.click();
-                        } else if (form.requestSubmit) {
-                            form.requestSubmit();
-                        }
-                    }
-                }
             }
             
-            attemptAutoAuth();
-            
-            // DOM 变更监听：一旦 React 渲染出 AuthForm 立即自动填密并提交
-            try {
-                const observer = new MutationObserver(attemptAutoAuth);
-                observer.observe(document.documentElement, { childList: true, subtree: true });
-            } catch(e) {}
-            
-            // 3. 原生触觉反馈接口
+            // 3. 原生触觉反馈
             window.tarsHaptic = function(type) {
                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.tarsHaptic) {
                     window.webkit.messageHandlers.tarsHaptic.postMessage(type || 'medium');
@@ -120,6 +95,7 @@ public struct WebViewContainer: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.bounces = true
         webView.allowsBackForwardNavigationGestures = true
         webView.isOpaque = false
         webView.backgroundColor = .systemBackground
@@ -183,28 +159,42 @@ public struct WebViewContainer: UIViewRepresentable {
                 self.parent.loadError = nil
             }
             
-            // 页面加载完成后，再次主动执行一次自动注入与认证
+            // 页面加载完成后，确保 localStorage 正确写入并尝试一次静默解除登录表单
             let secret = parent.config.bootstrapSecret.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
-            let checkAuthJS = """
+            let finishScript = """
             (function() {
                 const secret = '(secret)';
                 if (!secret) return;
-                try { window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret); } catch(e) {}
+                try {
+                    window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);
+                } catch(e) {}
+                
+                // 如果页面当前在密码输入界面，且尚未提交过
                 const input = document.getElementById('webui-access-password');
-                if (input && !input.disabled) {
+                if (input && !input.disabled && !window.__TARS_AUTO_SUBMITTED__) {
+                    window.__TARS_AUTO_SUBMITTED__ = true;
                     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
-                    if (setter) { setter.call(input, secret); } else { input.value = secret; }
+                    if (setter) {
+                        setter.call(input, secret);
+                    } else {
+                        input.value = secret;
+                    }
                     input.dispatchEvent(new Event('input', { bubbles: true }));
                     input.dispatchEvent(new Event('change', { bubbles: true }));
-                    const form = input.closest('form');
-                    if (form) {
-                        const submitBtn = form.querySelector('button[type="submit"]');
-                        if (submitBtn && !submitBtn.disabled) { submitBtn.click(); }
-                    }
+                    
+                    setTimeout(function() {
+                        const form = input.closest('form');
+                        if (form) {
+                            const btn = form.querySelector('button[type="submit"]');
+                            if (btn && !btn.disabled) {
+                                btn.click();
+                            }
+                        }
+                    }, 50);
                 }
             })();
             """
-            webView.evaluateJavaScript(checkAuthJS, completionHandler: nil)
+            webView.evaluateJavaScript(finishScript, completionHandler: nil)
         }
         
         public func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
