@@ -12,7 +12,6 @@ settings:
     SWIFT_VERSION: "5.0"
     IPHONEOS_DEPLOYMENT_TARGET: "16.0"
     ENABLE_PREVIEWS: YES
-    DEVELOPMENT_TEAM: ""
 
 targets:
   TARS:
@@ -32,4 +31,3 @@ targets:
         INFOPLIST_FILE: TARS/Resources/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
-        CODE_SIGNING_ALLOWED: NO
