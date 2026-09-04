@@ -24,6 +24,7 @@ targets:
       properties:
         CFBundleDisplayName: TARS
         UILaunchStoryboardName: LaunchScreen
+        UIRequiresFullScreen: true
         NSCameraUsageDescription: "TARS 需要相机权限以拍照发送给 Agent 分析。"
         NSMicrophoneUsageDescription: "TARS 需要麦克风权限以支持语音输入对话。"
         NSPhotoLibraryUsageDescription: "TARS 需要相册权限以选取照片发送给 Agent 分析。"
