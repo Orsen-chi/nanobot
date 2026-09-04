@@ -17,7 +17,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		1ACACC1E76478D326BCB4C1B /* TARS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TARS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1ACACC1E76478D326BCB4C1B /* TARS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TARS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		1AFD02AAF9A667DAACE52354 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4ABCE953763BDCC0BD112D5E /* TARSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TARSApp.swift; sourceTree = "<group>"; };
 		5222B778D953E33FE8D7273F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -246,6 +246,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S87DSA8VBU;
 				INFOPLIST_FILE = TARS/Resources/Info.plist;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -324,6 +325,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = S87DSA8VBU;
 				INFOPLIST_FILE = TARS/Resources/Info.plist;
 				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
 				LD_RUNPATH_SEARCH_PATHS = (

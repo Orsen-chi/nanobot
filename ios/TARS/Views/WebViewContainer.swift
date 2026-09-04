@@ -39,7 +39,7 @@ public struct WebViewContainer: UIViewRepresentable {
         (function() {
             window.__TARS_NATIVE__ = true;
             window.__TARS_VERSION__ = '1.0.0';
-            window.__TARS_BOOTSTRAP_SECRET__ = '(secret)';
+            window.__TARS_BOOTSTRAP_SECRET__ = '\(secret)';
             
             // 1. 强制铺满全屏视口，禁用误触缩放，修复渲染比例
             function applyViewport() {
@@ -67,7 +67,7 @@ public struct WebViewContainer: UIViewRepresentable {
             }
             
             // 2. 注入 localStorage 凭据
-            const secret = '(secret)';
+            const secret = '\(secret)';
             if (secret && secret.length > 0) {
                 try {
                     window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);
@@ -163,7 +163,7 @@ public struct WebViewContainer: UIViewRepresentable {
             let secret = parent.config.bootstrapSecret.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "'", with: "\\'")
             let finishScript = """
             (function() {
-                const secret = '(secret)';
+                const secret = '\(secret)';
                 if (!secret) return;
                 try {
                     window.localStorage.setItem('nanobot-webui.bootstrap-secret', secret);

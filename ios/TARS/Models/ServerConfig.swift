@@ -64,7 +64,7 @@ public final class ServerConfig: ObservableObject {
         let secret = bootstrapSecret.trimmingCharacters(in: .whitespacesAndNewlines)
         if !secret.isEmpty && (components.fragment == nil || components.fragment?.contains("bootstrapSecret") == false) {
             if let encodedSecret = secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-                components.fragment = "/?bootstrapSecret=(encodedSecret)"
+                components.fragment = "/?bootstrapSecret=\(encodedSecret)"
             }
         }
         
